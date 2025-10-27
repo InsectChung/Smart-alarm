@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智慧鬧鐘</title>
+<style>
+  body {
+    font-family: "Microsoft JhengHei", sans-serif;
+    background-color: #e8f5e9;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    font-size: 18px;
+  }
+  .container {
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+    width: 95%;
+    max-width: 900px;
+    padding: 32px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 40px;
+    color: #1b5e20;
+    font-weight: 900;
+    margin-bottom: 30px;
+    letter-spacing: 2px;
+  }
+  .box {
+    background: #f9f9f9;
+    padding: 20px;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    border: 1px solid #d9d9d9;
+  }
+  .center {
+    text-align: center;
+  }
+  button {
+    background: #1b5e20;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 18px;
+    margin-left: 5px;
+  }
+  button:hover { background: #145a26; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 18px;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 10px;
+    text-align: center;
+  }
+  th { background: #1b5e20; color: white; font-size: 20px; }
+  .gray { color: #777; font-size: 18px; }
+  input[type="datetime-local"], select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 18px;
+  }
+  @media (max-width:600px){
+    body{font-size:16px;}
+    h1{font-size:30px;}
+    button{font-size:16px;padding:8px 14px;}
+    input, select{font-size:16px;}
+    th,td{font-size:16px;}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>智慧鬧鐘</h1>
+
+  <!-- 顯示時間區塊（置中） -->
+  <div class="box center">
+    <div id="time">台灣時間：--</div>
+    <div id="next">下一次響鈴：(無)</div>
+  </div>
+
+  <!-- 鬧鐘設定區塊（置中） -->
+  <div class="box center">
+    <input type="datetime-local" id="datetime">
+    <select id="music"></select>
+    <button onclick="addAlarm()">新增鬧鐘</button>
+  </div>
+
+  <!-- 鬧鐘列表 -->
+  <div class="box">
+    <table id="tbl">
+      <tr><th>編號</th><th>時間</th><th>音樂</th><th>開關</th><th>刪除</th></tr>
+      <tr><td colspan="5" class="gray">目前沒有鬧鐘</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+const musicList=["生日快樂","給愛麗絲","小蜜蜂","快樂頌"];
+const sel=document.getElementById("music");
+musicList.forEach((m,i)=>{let o=document.createElement("option");o.value=i;o.textContent=`曲目${i+1}-${m}`;sel.appendChild(o);});
+
+async function refreshTime(){
+  try{
+    const t=await (await fetch('/time')).json();
+    document.getElementById('time').textContent=`台灣時間：${t.y}/${t.M}/${t.d} ${t.h.toString().padStart(2,'0')}:${t.m.toString().padStart(2,'0')}:${t.s.toString().padStart(2,'0')}`;
+  }catch{}
+}
+
+async function refreshAlarms(){
+  try{
+    const data=await (await fetch('/alarms')).json();
+    const next=data.next_alarm;
+    document.getElementById('next').textContent=next?`下一次響鈴：${next.M}/${next.d} ${next.h}:${next.m} (${next.music})`:"下一次響鈴：(無)";
+    const tbl=document.getElementById('tbl');
+    tbl.innerHTML='<tr><th>編號</th><th>時間</th><th>音樂</th><th>開關</th><th>刪除</th></tr>';
+    if(!data.alarms||data.alarms.length==0){tbl.innerHTML+='<tr><td colspan="5" class="gray">目前沒有鬧鐘</td></tr>';return;}
+    data.alarms.forEach((a,i)=>{
+      tbl.innerHTML+=`<tr>
+      <td>${i+1}</td>
+      <td>${a.y}/${a.M}/${a.d} ${a.h.toString().padStart(2,'0')}:${a.m.toString().padStart(2,'0')}</td>
+      <td>${musicList[a.music]}</td>
+      <td><button onclick="fetch('/switch?id=${i}').then(refreshAlarms)" style="background:${a.enabled?'#1b5e20':'#888'}">${a.enabled?'開啟':'關閉'}</button></td>
+      <td><button onclick="fetch('/delete?id=${i}').then(refreshAlarms)" style="background:#c62828;">刪除</button></td></tr>`;
+    });
+  }catch{}
+}
+
+async function addAlarm(){
+  const dt=document.getElementById("datetime").value;
+  if(!dt){alert("請選擇時間");return;}
+  const d=new Date(dt);
+  const y=d.getFullYear(),M=d.getMonth()+1,day=d.getDate(),h=d.getHours(),m=d.getMinutes(),music=document.getElementById("music").value;
+  await fetch(`/add?y=${y}&M=${M}&d=${day}&h=${h}&m=${m}&music=${music}`);
+  refreshAlarms();
+}
+
+async function checkRinging(){
+  try{
+    const s=await (await fetch('/status')).json();
+    if(s.ringing){showRingingPrompt();}
+  }catch{}
+}
+
+function showRingingPrompt(){
+  if(document.getElementById('ringBox'))return;
+  const box=document.createElement('div');
+  box.id='ringBox';
+  Object.assign(box.style,{
+    position:'fixed',top:'0',left:'0',width:'100%',height:'100%',
+    background:'rgba(0,0,0,0.5)',display:'flex',justifyContent:'center',alignItems:'center'
+  });
+  box.innerHTML=`<div style="background:white;padding:30px 40px;border-radius:12px;text-align:center;font-size:22px;">
+    <h2>🔔 鬧鐘響鈴中！</h2>
+    <button onclick="fetch('/stop').then(()=>closeBox())">關閉</button>
+    <button onclick="fetch('/snooze').then(()=>closeBox())" style="background:#2e7d32;">小睡5分鐘</button>
+  </div>`;
+  document.body.appendChild(box);
+}
+
+function closeBox(){
+  const b=document.getElementById('ringBox');if(b)b.remove();
+  refreshAlarms();
+}
+
+setInterval(refreshTime,1000);
+setInterval(refreshAlarms,4000);
+setInterval(checkRinging,2000);
+refreshTime();refreshAlarms();
+</script>
+</body>
+</html>
